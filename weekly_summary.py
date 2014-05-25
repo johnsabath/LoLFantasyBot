@@ -14,7 +14,7 @@ positions["Mid Lane"] = "Mid"
 positions["AD Carry"] = "ADC"
 positions["Support"] = "Support"
 
-def getPlayerPoints(player_json, key):
+def calculatePlayerPoints(player_json, key):
     points = 0
 
     try:
@@ -34,7 +34,7 @@ def getPlayerPoints(player_json, key):
 
     return points
 
-def getTeamPoints(team_json, key):
+def calculateTeamPoints(team_json, key):
     points = 0
 
     try:
@@ -54,24 +54,24 @@ if __name__ == '__main__':
     text = requests.get("http://fantasy.na.lolesports.com/en-US/api/season/4").text
     data = json.loads(text, object_pairs_hook=collections.OrderedDict)
 
-    players = [data['proPlayers'][x] for x in data['proPlayers'] if getPlayerPoints(data['proPlayers'][x]['statsByWeek'][WEEK], "actualValue") != 0]
-    teams = [data['proTeams'][x] for x in data['proTeams'] if getTeamPoints(data['proTeams'][x]['statsByWeek'][WEEK], "actualValue") != 0]
+    players = [data['proPlayers'][x] for x in data['proPlayers'] if calculatePlayerPoints(data['proPlayers'][x]['statsByWeek'][WEEK], "actualValue") != 0]
+    teams = [data['proTeams'][x] for x in data['proTeams'] if calculateTeamPoints(data['proTeams'][x]['statsByWeek'][WEEK], "actualValue") != 0]
 
 
     green = "[{0:+.2f}](#green)"
     red = "[{0:+.2f}](#red)"
 
-    players_by_projected_diff = sorted(players, key=lambda x:(getPlayerPoints(x['statsByWeek'][WEEK], "actualValue")-getPlayerPoints(x['statsByWeek'][WEEK], "projectedValue")), reverse=True)
-    players_by_actual = sorted(players, key=lambda x:getPlayerPoints(x['statsByWeek'][WEEK], "actualValue"), reverse=True)
-    teams_by_actual = sorted(teams, key=lambda x:getTeamPoints(x['statsByWeek'][WEEK], "actualValue"), reverse=True)
+    players_by_projected_diff = sorted(players, key=lambda x:(calculatePlayerPoints(x['statsByWeek'][WEEK], "actualValue")-calculatePlayerPoints(x['statsByWeek'][WEEK], "projectedValue")), reverse=True)
+    players_by_actual = sorted(players, key=lambda x:calculatePlayerPoints(x['statsByWeek'][WEEK], "actualValue"), reverse=True)
+    teams_by_actual = sorted(teams, key=lambda x:calculateTeamPoints(x['statsByWeek'][WEEK], "actualValue"), reverse=True)
 
     print("| Player | Position | Points | Diff. from Projected |&nbsp;&nbsp;&nbsp;&nbsp;| K^^[+2] | D^^[-0.5] | A^^[+1.5] | CS^^[+0.01] |&nbsp;&nbsp;&nbsp;&nbsp;| Trips^^[+2] | Quads^^[+5] | Pents^^[+10]  | K/A Bonus^^[+2] |")
     print("|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|")
 
     for player in players_by_actual:
         stats = player['statsByWeek'][WEEK]
-        actual = getPlayerPoints(stats, "actualValue")
-        projected = getPlayerPoints(stats, "projectedValue")
+        actual = calculatePlayerPoints(stats, "actualValue")
+        projected = calculatePlayerPoints(stats, "projectedValue")
 
         if (actual != 0):
             print("| [%s](http://lolesports.com/node/%s) | %s | %.2f | %s | | %s | %s | %s | %s | | %s | %s | %s | %s |" % (player['name'], player['riotId'], positions[player['positions'][0]], actual, green.format(actual-projected) if actual-projected >= 0 else red.format(actual-projected), stats['kills']['actualValue'], stats['deaths']['actualValue'], stats['assists']['actualValue'], stats['minionKills']['actualValue'], stats['tripleKills']['actualValue'], stats['quadraKills']['actualValue'], stats['pentaKills']['actualValue'], stats['killOrAssistBonus']['actualValue']))
@@ -83,8 +83,8 @@ if __name__ == '__main__':
 
     for team in teams_by_actual:
         stats = team['statsByWeek'][WEEK]
-        actual = getTeamPoints(stats, "actualValue")
-        projected = getTeamPoints(stats, "projectedValue")
+        actual = calculateTeamPoints(stats, "actualValue")
+        projected = calculateTeamPoints(stats, "projectedValue")
         if (actual != 0):
             print("| [%s](http://lolesports.com/node/%s) | %.2f | %s | | %s | %s | %s | %s | %s |" % (team['name'], team['riotId'], actual, green.format(actual-projected) if actual-projected >= 0 else red.format(actual-projected), stats['matchVictory']['actualValue'], stats['firstBlood']['actualValue'], stats['baronKills']['actualValue'], stats['dragonKills']['actualValue'], stats['towerKills']['actualValue']))
 
@@ -95,16 +95,16 @@ if __name__ == '__main__':
 
     for player in players_by_projected_diff[:5]:
         stats = player['statsByWeek'][WEEK]
-        actual = getPlayerPoints(stats, "actualValue")
-        projected = getPlayerPoints(stats, "projectedValue")
+        actual = calculatePlayerPoints(stats, "actualValue")
+        projected = calculatePlayerPoints(stats, "projectedValue")
         print("| [%s](http://lolesports.com/node/%s) | %.2f | %s |" % (player['name'], player['riotId'], actual, green.format(actual-projected) if actual-projected >= 0 else red.format(actual-projected)))
 
     print("| ... | ... | ... |")
 
     for player in players_by_projected_diff[-5:]:
         stats = player['statsByWeek'][WEEK]
-        actual = getPlayerPoints(stats, "actualValue")
-        projected = getPlayerPoints(stats, "projectedValue")
+        actual = calculatePlayerPoints(stats, "actualValue")
+        projected = calculatePlayerPoints(stats, "projectedValue")
         print("| [%s](http://lolesports.com/node/%s) | %.2f | %s |" % (player['name'], player['riotId'], actual, green.format(actual-projected) if actual-projected >= 0 else red.format(actual-projected)))
     '''
     print("&nbsp;\n\n**Best Performances per Role**\n\n---")
@@ -114,7 +114,7 @@ if __name__ == '__main__':
         print("| Player | Points |")
         print("|:-:|:-:|")
         for player in [x for x in players_by_actual if x['positions'][0] == position]:
-            actual = getPlayerPoints(player['statsByWeek'][WEEK], "actualValue")
+            actual = calculatePlayerPoints(player['statsByWeek'][WEEK], "actualValue")
             print("| [%s](http://lolesports.com/node/%s) | %+.2f |" % (player['name'], player['riotId'], actual))
         print("\n")
     '''
