@@ -54,3 +54,5 @@ docs/_build/
 
 *.cfg
 weekly_summary.py
+requirements.txt
+runtime.txt
