@@ -191,7 +191,7 @@ if __name__ == '__main__':
                     region = title_search.groups()[2]
                     week = title_search.groups()[3]
 
-                    logging.info(region, week, team1, team2, sep=" | ")
+                    logging.info(("|"+(" %s |"*4))%(region, week, team1, team2))
 
                     post = buildPost(region, week, team1, team2)
                     logging.debug(post)
