@@ -158,10 +158,11 @@ def buildPost(region, week, team1_name, team2_name):
             post += buildPlayerTable(game, full_json)
 
             post += "\n---\n"
+            post += "^^The ^^API ^^that ^^this ^^bot ^^uses ^^is ^^extremely ^^finicky ^^\(rito ^^plz), ^^occasionally " \
+                    "^^the ^^bot ^^will ^^post ^^incomplete ^^full_json ^^or ^^fail ^^to ^^post ^^completely.  \n"
             post += "^^I ^^am ^^maintained ^^by ^^/u/_Zaga_.  ^^To ^^learn ^^more ^^about ^^fantasy ^^LoL ^^visit ^^the " \
                     "^^official ^^fantasy ^^LoL ^^website ^^[here](http://fantasy.lolesports.com).  \n"
-            post += "^^The ^^API ^^that ^^this ^^bot ^^uses ^^is ^^extremely ^^finicky ^^\(rito ^^plz), ^^occasionally " \
-                    "^^the ^^bot ^^will ^^post ^^incomplete ^^full_json ^^or ^^fail ^^to ^^post ^^completely."
+            post += "^^The ^^source ^^code ^^for ^^/u/LoLFantasyBot ^^can ^^be ^^found ^^[here](https://github.com/0Zaga0/LoLFantasyBot)."
 
             break
 
