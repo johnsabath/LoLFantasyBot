@@ -56,3 +56,4 @@ docs/_build/
 weekly_summary.py
 requirements.txt
 runtime.txt
+last_processed_game.dat

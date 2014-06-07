@@ -4,105 +4,54 @@ Created on May 21, 2014
 @author: John Sabath - /u/_Zaga_
 '''
 
-import praw, configparser, requests, collections
-import json, re, time, logging
+import praw, configparser, datetime
+import time, logging, pickle, os
+import constants, api_calls, utility
 
-FANTASY_API_URL = "http://na.lolesports.com:80/api/gameStatsFantasy.json?tournamentId=%s"
-FANTASY_API_URL_WITH_TIME = "http://na.lolesports.com:80/api/gameStatsFantasy.json?tournamentId=%s&dateBegin=%s&dateEnd=%s"
-LEAGUE_API_URL = "http://na.lolesports.com:80/api/league/%s.json"
+# Initial values (these will be overwritten from the save file)
+last_match_NA = 2530
+last_match_EU = 2312
 
-PLAYER_TABLE_HEADER = "| Player | Points |&nbsp;&nbsp;&nbsp;&nbsp;| K^^[+2] | D^^[-0.5] | A^^[+1.5] | CS^^[+0.01] |" \
-                      "&nbsp;&nbsp;&nbsp;&nbsp;| Trips^^[+2] | Quads^^[+5] | Pents^^[+10]  | K/A Bonus^^[+2] |\n"
-PLAYER_TABLE_VALUES = "|[%s](http://lolesports.com/node/%s)| %+.2f | | %s | %s | %s | %s | | %s | %s | %s | %s |\n"
+# Config file values
+config = None
 
-TEAM_TABLE_HEADER = "| Team | Points |&nbsp;&nbsp;&nbsp;&nbsp;| Win^^[+2] | First Blood^^[+2] | Barons^^[+2] | Dragons^^[+1]| Towers^^[+1] |\n"
-TEAM_TABLE_VALUES = "|[%s](http://lolesports.com/node/%s)| %+.2f | | %s | %s | %s | %s | %s |\n"
+# JSON objects
+programming_json = None
+fantasy_json = None
 
-POST_GAME_REGEX = re.compile("\[Spoilers?\] (.*) vs\.? (.*) / (\w{2}) LCS.* Week (\d*)")
-
-CORRECTION_DICT = {
-    'Gambit':'Gambit Gaming',
-    'Cloud 9':'Cloud 9 ',
-    'Complexity':'Complexity ',
-    'Dignitas':'Team Dignitas',
-    'Evil Genius':'Evil Geniuses'
-}
-
-def calculateTeamPoints(team_json):
-    points = 0
-
-    if int(team_json['firstBlood']) == 1:
-        points += 2
-
-    if int(team_json['matchVictory']) == 1:
-        points += 2
-
-    points += 2 * int(team_json['baronsKilled'])
-    points += 1 * int(team_json['towersKilled'])
-    points += 1 * int(team_json['dragonsKilled'])
-
-    return points
-
-def calculatePlayerPoints(player_json):
-    points = 0
-
-    points += 2 * int(player_json['kills'])
-    points += -0.5 * int(player_json['deaths'])
-    points += 1.5 * int(player_json['assists'])
-
-    points += 0.01 * int(player_json['minionKills'])
-
-    points += 2 * int(player_json['tripleKills'])
-    points += 5 * int(player_json['quadraKills'])
-    points += 10 * int(player_json['pentaKills'])
-
-    if int(player_json['assists']) >= 10 or int(player_json['kills']) >= 10:
-        points += 2
-
-    return points
-
-def getTournamentId(region):
-
-    if region.upper() == "NA":
-        return 104
-    elif region.upper() == "EU":
-        return 102
-
-    return 0
+# Duration that the main loop should sleep on this iteration
+sleep_duration = 60
 
 def buildTeamTable(team1, team2):
-    post = ""
-
-    post += TEAM_TABLE_HEADER
-    post += "|" + (TEAM_TABLE_HEADER.count('|')-1)*":-:|" + "\n"
+    table = []
 
     for team in (team1, team2):
         name = team['teamName']
         teamId = team['teamId']
+        profile = "[%s](http://lolesports.com/node/%s)" % (name, teamId)
         barons = team['baronsKilled']
         dragons = team['dragonsKilled']
         towers = team['towersKilled']
         victory = 'X' if team['matchVictory'] == 1 else ''
         first_blood = 'X' if team['firstBlood'] == 1 else ''
-        points = calculateTeamPoints(team)
+        points = utility.calculateTeamPoints(team)
 
-        post += TEAM_TABLE_VALUES % (name, teamId, points, victory, first_blood, barons, dragons, towers)
+        table.append([profile, points, victory, first_blood, barons, dragons, towers])
 
-    return post
+    return utility.buildRedditTable(constants.TEAM_TABLE_COLUMNS, table)
 
-def buildPlayerTable(game, full_json):
-    post = ""
-    players = [key for key in full_json['playerStats'][game] if "player" in key]
+def buildPlayerTable(game):
+    table = []
 
-    post += PLAYER_TABLE_HEADER
-    post += "|" + (PLAYER_TABLE_HEADER.count('|')-1)*":-:|" + "\n"
+    players = [key for key in fantasy_json['playerStats'][game] if "player" in key]
 
     for i, player_id in enumerate(players):
-        player = full_json['playerStats'][game][player_id]
+        player = fantasy_json['playerStats'][game][player_id]
 
         name = player['playerName']
         playerId = player['playerId']
-        points = calculatePlayerPoints(player)
+        profile = "[%s](http://lolesports.com/node/%s)" % (name, playerId)
+        points = utility.calculatePlayerPoints(player)
         kills = player['kills']
         deaths = player['deaths']
         assists = player['assists']
@@ -112,54 +61,113 @@ def buildPlayerTable(game, full_json):
         pents = player['pentaKills'] if player['pentaKills'] > 0 else ''
         bonus = 'X' if (player['kills'] >= 10 or player['assists'] >= 10) else ''
 
-        post += PLAYER_TABLE_VALUES % (name, playerId, points, kills, deaths, assists, cs, trips, quads, pents, bonus)
+        table.append([profile, "%.2f" % points, kills, deaths, assists, cs, trips, quads, pents, bonus])
 
         if i == 4:
-            post += "|&nbsp;|\n"
+            table.append(["|&nbsp;|"]*10)
 
-    return post
+    return utility.buildRedditTable(constants.PLAYER_TABLE_COLUMNS, table)
 
-def buildPost(region, week, team1_name, team2_name):
-    if team1_name in CORRECTION_DICT:
-        team1_name = CORRECTION_DICT[team1_name]
+def createPostMatchThread(block, match, post):
+    global last_match_NA
+    global last_match_EU
 
-    if team2_name in CORRECTION_DICT:
-        team2_name = CORRECTION_DICT[team2_name]
+    if post != "":
+        title = "[Spoiler] %s / %s / Fantasy Discussion" % (match['matchName'], block['label'])
+        logging.info(title)
+        logging.info("-"*25)
+        logging.info(post)
 
+        r.submit("fantasylcs", title, post)
+
+        if block['tournamentId'] == str(api_calls.getTournamentId("NA")):
+            last_match_NA = int(match['matchId'])
+        else:
+            last_match_EU = int(match['matchId'])
+
+def checkSchedule(r):
+    global fantasy_json
+    global programming_json
+    global sleep_duration
+
+    matches_are_live = False
+    programming_json = api_calls.getProgramming()
+
+    for block in programming_json:
+        block_date = datetime.datetime.strptime(block['dateTime'].split('T')[0], "%Y-%m-%d")
+        now = datetime.datetime.now()
+
+        if block_date.day == now.day and block_date.month == now.month:
+            if block['tournamentId'] in (str(api_calls.getTournamentId("EU")), str(api_calls.getTournamentId("NA"))):
+                fantasy_json = api_calls.getFantasyPoints(int(block['tournamentId']))
+
+                logging.debug(block['label'])
+                for match_id in block['matches']:
+                    logging.debug(match_id)
+
+                    match = block['matches'][match_id]
+
+                    region = "EU" if block['tournamentId'] == str(api_calls.getTournamentId("EU")) else "NA"
+                    team1_name = match['contestants']['blue']['name']
+                    team2_name = match['contestants']['red']['name']
+
+                    post = buildPost(region, team1_name, team2_name, True)
+
+                    if post != "":
+                        if block['tournamentId'] == str(api_calls.getTournamentId("NA")) and int(match['matchId']) <= last_match_NA:
+                            continue
+                        if block['tournamentId'] == str(api_calls.getTournamentId("EU")) and int(match['matchId']) <= last_match_EU:
+                            continue
+
+                        createPostMatchThread(block, match, post)
+
+                    if match['isLive'] == True:
+                        logging.info("[LIVE MATCH] %s" % match['matchName'])
+                        matches_are_live = True
+
+    if matches_are_live:
+        sleep_duration =  1 * 60 #1 minute
+    else:
+        sleep_duration = 20 * 60 #20 minutes
+
+def buildPost(region, team1_name, team2_name, own_thread):
     post = ""
 
-    text = requests.get(FANTASY_API_URL_WITH_TIME % (getTournamentId(region), int(time.time()-30*60*60), int(time.time()))).text
-    full_json = json.loads(text, object_pairs_hook=collections.OrderedDict)
+    team1_name = utility.correctTeamName(team1_name)
+    team2_name = utility.correctTeamName(team2_name)
 
-    for game in full_json['teamStats']:
+    for game in fantasy_json['teamStats']:
         team1_id = ""
         team2_id = ""
 
-        for key in full_json['teamStats'][game]:
+        for key in fantasy_json['teamStats'][game]:
             if "team" in key:
                 if team1_id == "":
                     team1_id = key
                 else:
                     team2_id = key
 
-        game_teams = (full_json['teamStats'][game][team1_id]['teamName'].lower(), full_json['teamStats'][game][team2_id]['teamName'].lower())
+        game_teams = (fantasy_json['teamStats'][game][team1_id]['teamName'].lower(), fantasy_json['teamStats'][game][team2_id]['teamName'].lower())
 
+        #logging.debug((team1_name.lower(), team2_name.lower()))
         #logging.debug(game_teams)
+        #logging.debug("---")
 
         if team1_name.lower() in game_teams and team2_name.lower() in game_teams:
-            post += "^For ^in-depth ^fantasy ^discussions, ^visit ^/r/FantasyLCS\n\n"
-            post += "###Fantasy Impact\n"
-            post += "---\n"
+            if not own_thread:
+                post += "^For ^in-depth ^fantasy ^discussions, ^visit ^/r/FantasyLCS\n\n"
+                post += "###Fantasy Impact\n"
+                post += "---\n"
 
-            post += buildTeamTable(full_json['teamStats'][game][team1_id], full_json['teamStats'][game][team2_id])
+            post += buildTeamTable(fantasy_json['teamStats'][game][team1_id], fantasy_json['teamStats'][game][team2_id])
 
             post += "&nbsp;\n\n"
 
-            post += buildPlayerTable(game, full_json)
+            post += buildPlayerTable(game)
 
             post += "\n---\n"
             post += "^^The ^^API ^^that ^^this ^^bot ^^uses ^^is ^^extremely ^^finicky ^^\(rito ^^plz), ^^occasionally " \
-                    "^^the ^^bot ^^will ^^post ^^incomplete ^^full_json ^^or ^^fail ^^to ^^post ^^completely.  \n"
+                    "^^the ^^bot ^^will ^^post ^^incomplete ^^data ^^or ^^fail ^^to ^^post ^^completely.  \n"
             post += "^^I ^^am ^^maintained ^^by ^^/u/_Zaga_.  ^^To ^^learn ^^more ^^about ^^fantasy ^^LoL ^^visit ^^the " \
                     "^^official ^^fantasy ^^LoL ^^website ^^[here](http://fantasy.lolesports.com).  \n"
             post += "^^The ^^source ^^code ^^for ^^/u/LoLFantasyBot ^^can ^^be ^^found ^^[here](https://github.com/0Zaga0/LoLFantasyBot)."
@@ -169,6 +177,8 @@ def buildPost(region, week, team1_name, team2_name):
     return post
 
 if __name__ == '__main__':
+    global fantasy_json
+
     cached_threads = []
 
     logging.basicConfig(level=logging.DEBUG)
@@ -176,24 +186,42 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read("config.cfg")
 
+    if (os.path.isfile("last_processed_game.dat")):
+        f = open("last_processed_game.dat", "rb")
+        data = pickle.load(f)
+        last_match_NA = data[0]
+        last_match_EU = data[1]
+        f.close()
+
     r = praw.Reddit(user_agent="LoLFantasyBot created by /u/_Zaga_")
     r.login(config.get("Login Info", "username"), config.get("Login Info", "password"))
 
     while True:
+        logging.info((last_match_NA, last_match_EU))
+
         try:
-            subreddit = r.get_subreddit('leagueoflegends+fantasylcs')
+            checkSchedule(r)
+        except Exception as ex:
+            logging.exception("Failed in checkSchedule()")
+
+        try:
+            subreddit = r.get_subreddit('leagueoflegends')
+
             for submission in subreddit.get_new(limit=100):
-                title_search = POST_GAME_REGEX.search(submission.title)
+                title_search = constants.POST_GAME_REGEX.search(submission.title)
 
                 if submission.id not in cached_threads and title_search:
-                    team1 = title_search.groups()[0]
-                    team2 = title_search.groups()[1]
+                    team1  = title_search.groups()[0]
+                    team2  = title_search.groups()[1]
                     region = title_search.groups()[2]
-                    week = title_search.groups()[3]
+                    week   = title_search.groups()[3]
+
+                    fantasy_json = api_calls.getFantasyPoints(api_calls.getTournamentId(region))
 
                     logging.info(("|"+(" %s |"*4))%(region, week, team1, team2))
 
-                    post = buildPost(region, week, team1, team2)
+                    post = buildPost(region, team1, team2, False)
+
                     logging.debug(post)
 
                     if post != "":
@@ -201,6 +229,11 @@ if __name__ == '__main__':
                         submission.add_comment(post)
 
         except Exception as ex:
-            logging.exception("YOU DONE MESSED UP, A-A-RON")
+            logging.exception("Failed to find game/post comment")
 
-        time.sleep(60)
+        f = open("last_processed_game.dat", "wb")
+        pickle.dump((last_match_NA, last_match_EU), f)
+        f.close()
+
+        logging.info("Sleeping for %s minute(s)" % (sleep_duration/60))
+        time.sleep(sleep_duration)
