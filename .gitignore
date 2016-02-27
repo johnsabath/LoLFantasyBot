@@ -53,7 +53,4 @@ coverage.xml
 docs/_build/
 
 *.cfg
-weekly_summary.py
-requirements.txt
-runtime.txt
-last_processed_game.dat
+
