@@ -18,7 +18,7 @@ completed_matches = []
 for match in fantasylcs.get_matches():
     utc_now = datetime.datetime.utcnow()
 
-    if match.get_datetime().naive < utc_now - datetime.timedelta(days=1) and match.is_completed():
+    if match.get_datetime().naive < utc_now and match.is_completed():
         completed_matches.append(match.get_id())
 
 #
