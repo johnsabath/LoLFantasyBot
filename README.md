@@ -1,3 +1,5 @@
+# Notice: The API that was used by this project is no longer in service.
+
 LoLFantasyBot
 =============
 
