@@ -1,6 +1,6 @@
 # LoLFantasyBot
 
-#### NOTICE: The API used in this project is no longer available.
+#### NOTICE: The API used by this project is no longer available.
 
 ## Purpose
 
